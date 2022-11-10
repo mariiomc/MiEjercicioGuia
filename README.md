@@ -1,4 +1,4 @@
 # MiEjercicioGuia
 
 
-Version con conexión desconexión
+Version con exclusión mutua

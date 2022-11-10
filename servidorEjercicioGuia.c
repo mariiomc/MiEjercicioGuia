@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <stdio.h>
+#include <pthread.h>
 /*
  1/ tamaño nombre
  2/ nombre bonito
@@ -14,12 +15,129 @@
  5/ invitar a jugar
  6/ palindromo
  7/ mayusculas
+ 8/ servicios
 */
+int contador;
+
+//Estructura necesaria para acceso excluyente
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+void *AtenderCliente (void *socket)
+{
+	int sock_conn;
+	int *s;
+	s= (int *) socket;
+	sock_conn= *s;
+	
+	//int socket_conn = * (int *) socket;
+	
+	char peticion[512];
+	char respuesta[512];
+	int ret;
+	
+	int terminar = 0;
+	
+	while(terminar == 0){
+		
+		// Ahora recibimos su peticion
+		ret=read(sock_conn,peticion, sizeof(peticion));
+		printf ("Recibida una petición\n");
+		// Tenemos que a?adirle la marca de fin de string 
+		// para que no escriba lo que hay despues en el buffer
+		peticion[ret]='\0';
+		
+		//Escribimos la peticion en la consola
+		
+		printf ("La petición es: %s\n",peticion);
+		char *p = strtok(peticion, "/");
+		int codigo =  atoi (p);
+		char nombre[20];
+		if (codigo != 0) && (codigo != 4){
+			p = strtok( NULL, "/");
+			
+			strcpy (nombre, p);
+			printf ("Codigo: %d, Nombre: %s\n", codigo, nombre);
+		}
+		if(codigo == 0)
+			terminar = 1;
+		else if (codigo ==1) //piden la longitd del nombre
+			sprintf (respuesta,"%d",strlen (nombre));
+		else if (codigo == 2)
+			// quieren saber si el nombre es bonito
+			if((nombre[0]=='M') || (nombre[0]=='S'))
+			strcpy (respuesta,"SI");
+			else
+				strcpy (respuesta,"NO");
+			else if(codigo ==3)//decir si es alto
+			{
+				p = strtok(NULL,"/");
+				float altura = atof(p);
+				if (altura > 1.70)
+					sprintf(respuesta,"%s: eres alto", nombre);
+				else
+					sprintf(respuesta,"%s: eres bajo", nombre);
+			}
+			else if (codigo ==4)
+				sprintf (respuesta,"%d",contador);
+			else if (codigo == 6){
+				//saber si mi nombre es palindromo
+				int i;
+				int j;
+				int h;
+				int r;
+				char mitad1 [20];
+				char mitad2[20];
+				for(i=0;i<strlen(nombre);i++){
+					
+					j = strlen(nombre) / 2;
+					for(h=0;h<j;h++){
+						mitad1[h] = nombre[h];
+					}
+					for(h=strlen(nombre)-1; h>j; h--){
+						r = 0;
+						mitad2[r] = nombre[h];
+						r++;
+					}
+					if (mitad1 == mitad2){
+						strcpy (respuesta, "SI");
+					}
+					else
+						strcpy(respuesta,"NO");
+				}
+			}
+			else if (codigo == 7){
+				//devolver nombre en mayusculas
+				int i;
+				for (i=0;i<strlen(nombre);i++){
+					nombre[i] = toupper(nombre[i]);
+				}
+				sprintf(respuesta, "%c", nombre);
+			}
+			if (codigo !=0)	{
+				printf("Respuesta: s&\n", respuesta);
+				// Enviamos la respuesta
+				
+				write (sock_conn,respuesta, strlen(respuesta));
+			}
+			if ((codigo == 1) ||(codigo == 2) ||(codigo == 3) ||(codigo == 4) ||(codigo == 5) ||(codigo == 6) ||(codigo == 7))
+			{
+				pthread_mutex_lock( &mutex ); //No me interrumpas ahora
+				contador = contador +1;
+				pthread_mutex_unlock( &mutex); //ya puedes interrumpirme
+			}
+	}
+	// Se acabo el servicio para este cliente
+	close(sock_conn); 
+	
+}
+
+
 
 int main(int argc, char *argv[])
 {
 	int sock_conn, sock_listen, ret;
 	struct sockaddr_in serv_adr;
+	
 	char peticion[512];
 	char respuesta[512];
 	// INICIALITZACIONS
@@ -39,99 +157,24 @@ int main(int argc, char *argv[])
 	//La cola de peticiones pendientes no podr? ser superior a 4
 	if (listen(sock_listen, 4) < 0)
 		printf("Error en el Listen");
+	contador = 0;
 	int i;
-	// Atenderemos solo 10 peticione
+	int sockets[100];
+	pthread_t thread;
+	i=0;
+	
 	for(;;){
 		printf ("Escuchando\n");
 		
 		sock_conn = accept(sock_listen, NULL, NULL);
 		printf ("He recibido conexi?n\n");
 		//sock_conn es el socket que usaremos para este cliente
+		sockets[i] =sock_conn;
+		//sock_conn es el socket que usaremos para este cliente
 		
-		int terminar = 0;
-		while(terminar == 0){
+		// Crear thead y decirle lo que tiene que hacer
 		
-			// Ahora recibimos su peticion
-			ret=read(sock_conn,peticion, sizeof(peticion));
-			printf ("Recibida una petición\n");
-			// Tenemos que a?adirle la marca de fin de string 
-			// para que no escriba lo que hay despues en el buffer
-			peticion[ret]='\0';
-			
-			//Escribimos la peticion en la consola
-			
-			printf ("La petición es: %s\n",peticion);
-			char *p = strtok(peticion, "/");
-			int codigo =  atoi (p);
-			char nombre[20];
-			if (codigo != 0){
-				p = strtok( NULL, "/");
-				
-				strcpy (nombre, p);
-				printf ("Codigo: %d, Nombre: %s\n", codigo, nombre);
-			}
-			if(codigo == 0)
-				terminar = 1;
-			else if (codigo ==1) //piden la longitd del nombre
-				sprintf (respuesta,"%d",strlen (nombre));
-			else if (codigo == 2)
-				// quieren saber si el nombre es bonito
-				if((nombre[0]=='M') || (nombre[0]=='S'))
-				strcpy (respuesta,"SI");
-				else
-					strcpy (respuesta,"NO");
-			else if(codigo ==3)//decir si es alto
-				{
-					p = strtok(NULL,"/");
-					float altura = atof(p);
-					if (altura > 1.70)
-						sprintf(respuesta,"%s: eres alto", nombre);
-					else
-						sprintf(respuesta,"%s: eres bajo", nombre);
-				}
-			else if (codigo == 6){
-				//saber si mi nombre es palindromo
-				int i;
-				int j;
-				int h;
-				int r;
-				char mitad1 [20];
-				char mitad2[20];
-				for(i=0;i<strlen(nombre);i++){
-					
-						j = strlen(nombre) / 2;
-						for(h=0;h<j;h++){
-							mitad1[h] = nombre[h];
-						}
-						for(h=strlen(nombre)-1; h>j; h--){
-							r = 0;
-							mitad2[r] = nombre[h];
-							r++;
-						}
-						if (mitad1 == mitad2){
-							strcpy (respuesta, "SI");
-						}
-						else
-							strcpy(respuesta,"NO");
-				}
-				}
-			else if (codigo == 7){
-				//devolver nombre en mayusculas
-				int i;
-				for (i=0;i<strlen(nombre);i++){
-					nombre[i] = toupper(nombre[i]);
-				}
-				sprintf(respuesta, "%c", nombre);
-			}
-			if (codigo !=0)	{
-				printf("Respuesta: s&\n", respuesta);
-				// Enviamos la respuesta
-			
-				write (sock_conn,respuesta, strlen(respuesta));
-				}
-		}
-		// Se acabo el servicio para este cliente
-		close(sock_conn); 
-		
+		pthread_create (&thread, NULL, AtenderCliente,&sockets[i]);
+		i=i+1;
 	}
 }
